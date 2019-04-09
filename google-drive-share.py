@@ -3,11 +3,13 @@
 import os
 import json
 import argparse
+import pandas as pd
 
 from apiclient.discovery import build  # pip install google-api-python-client
 from oauth2client import file, client, tools
 
 FOLDER = 'application/vnd.google-apps.folder'
+PERMISSION_DICT = []
 
 def get_credentials(scopes, flags, secrets='client_secret.json', storage='~/.credentials/google-drive-share.json'):
 
@@ -39,7 +41,10 @@ def iterfiles(name=None, is_folder=None, parent=None, order_by='folder,name,crea
     params = {'pageToken': None, 'orderBy': order_by}
     if q:
         params['q'] = ' and '.join(q)
-    while True:
+
+    count = 0
+    while True and count < 100:
+        count += 1
         response = service.files().list(**params).execute()
         for f in response['files']:
             permissionList = service.permissions().list(fileId=f['id'],fields='*').execute()
@@ -54,7 +59,8 @@ def iterfiles(name=None, is_folder=None, parent=None, order_by='folder,name,crea
                     permissions.append('%s=%s' % (p['role'],p['type']))
                     permissionIdsToRemove.append(p['id'])
 
-            print('"%s","%s","%s"' % (f['id'],f['name'], ','.join(permissions)))
+            for p in permissions:
+                PERMISSION_DICT.append({'id': f['id'], 'name': f['name'], 'type': p.split('=')[0], 'person': p.split('=')[1]})
 
             if args.emailAddressWhitelist:
                 for permissionId in permissionIdsToRemove:
@@ -79,6 +85,10 @@ def walk(folderId):
             yield path, top, dirs, files
             if dirs:
                 stack.append((path + (top['name'],), dirs))
+
+    df = pd.DataFrame(PERMISSION_DICT)
+    df.to_csv('permissions.csv')
+    print('exported {num} permissions'.format(num(len(df))))
 
 print('id,name,permissions')
 results_count=[]
