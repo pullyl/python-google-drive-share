@@ -114,10 +114,9 @@ def walk(folderId):
                 stack.append((path + (top['name'],), dirs))
 
     df = pd.DataFrame(PERMISSION_DICT)
-    df.to_csv('permissions2.csv')
+    df.to_csv('all-folder-permissions.csv')
     print('exported {num} permissions'.format(num=len(df)))
 
-print('id,name,permissions')
 results_count=[]
 for path, root, dirs, files in walk(args.folderId):
     results_count.append('%s\t%d %d' % ('/'.join(path), len(dirs), len(files)))

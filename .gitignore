@@ -108,3 +108,4 @@ client_*.json
 credentials-*.dat
 *.xml
 *.iml
+*.csv
