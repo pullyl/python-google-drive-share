@@ -34,5 +34,5 @@ python google-drive-share.py --folderId MYFOLDERID
 python google-drive-share.py --folderId MYFOLDERID --emailAddressWhitelist allowedUser1@test.com allowedUser2@test.com
 
 # remove permissions from folks on blacklist
---folderId 1V09jZzZP5UshCnhTb7XS5DKZ-lbY2X_7 --emailAddressBlacklist pullyl@gmail.com
+--folderId 1V09jZzZP5UshCnhTb7XS5DKZ-lbY2X_7 --emailAddressBlacklist [GOOGLE SPREADHSEET URL TO BLACKLIST]
 ```
