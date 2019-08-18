@@ -26,6 +26,7 @@ parser = argparse.ArgumentParser(
     parents=[tools.argparser])
 parser.add_argument('--folderId', dest='folderId', required=True, help='Google Drive folderId (found in url when folder is open')
 parser.add_argument('--emailAddressWhitelist', dest='emailAddressWhitelist', nargs='*', default=[], help='if present will attempt to remove permissions from all emailAddresses not in the whitelist or the owner, including public share links')
+parser.add_argument('--emailAddressBlacklist', dest='emailAddressBlacklist', nargs='*', default=[], help='if present will attempt to remove permissions from these email addresses')
 args = parser.parse_args()
 creds = get_credentials('https://www.googleapis.com/auth/drive', args)
 service = build('drive', version='v3', credentials=creds)
@@ -43,29 +44,55 @@ def iterfiles(name=None, is_folder=None, parent=None, order_by='folder,name,crea
         params['q'] = ' and '.join(q)
 
     count = 0
-    while True and count < 100:
+    while True:
         count += 1
         response = service.files().list(**params).execute()
         for f in response['files']:
             permissionList = service.permissions().list(fileId=f['id'],fields='*').execute()
             permissions = []
             permissionIdsToRemove = []
-            for p in permissionList['permissions']:
-                if 'emailAddress' in p:
-                    permissions.append('%s=%s' % (p['role'],p['emailAddress']))
-                    if p['role'] != 'owner' and p['emailAddress'] not in args.emailAddressWhitelist:
+            removed = False
+
+            #Only allow whitelisted permissions
+            if len(args.emailAddressWhitelist):
+                for p in permissionList['permissions']:
+                    if 'emailAddress' in p:
+                        permissions.append('%s=%s' % (p['role'],p['emailAddress']))
+                        if p['role'] != 'owner' and p['emailAddress'] not in args.emailAddressWhitelist:
+                            permissionIdsToRemove.append(p['id'])
+                    else:
+                        permissions.append('%s=%s' % (p['role'],p['type']))
                         permissionIdsToRemove.append(p['id'])
-                else:
-                    permissions.append('%s=%s' % (p['role'],p['type']))
-                    permissionIdsToRemove.append(p['id'])
 
-            for p in permissions:
-                PERMISSION_DICT.append({'id': f['id'], 'name': f['name'], 'type': p.split('=')[0], 'person': p.split('=')[1]})
+            #Remove blacklisted permissions if exist
+            if len(args.emailAddressBlacklist):
+                removed = True
+                for p in permissionList['permissions']:
+                    if 'emailAddress' in p:
+                        permissions.append('%s=%s' % (p['role'],p['emailAddress']))
+                        if p['role'] != 'owner' and p['emailAddress'] in args.emailAddressBlacklist:
+                            permissionIdsToRemove.append(p['id'])
+                    else:
+                        permissions.append('%s=%s' % (p['role'],p['type']))
+                        print(p)
+                        permissionIdsToRemove.append(p['id'])
 
-            if args.emailAddressWhitelist:
+            #Remove some if necessary
+            if len(permissionIdsToRemove):
+                removed = True
                 for permissionId in permissionIdsToRemove:
                     print('removing permissions: %s' % ','.join(permissionIdsToRemove))
                     permissionList = service.permissions().delete(fileId=f['id'],permissionId=permissionId).execute()
+
+            #Add permissions to dict
+            if removed:
+                permissionList = service.permissions().list(fileId=f['id'],fields='*').execute()
+            for p in permissionList['permissions']:
+                if 'emailAddress' in p:
+                    permissions.append('%s=%s' % (p['role'], p['emailAddress']))
+            for p in permissions:
+                PERMISSION_DICT.append({'id': f['id'], 'name': f['name'], 'type': p.split('=')[0], 'person': p.split('=')[1]})
+
 
             yield f
         try:
@@ -87,8 +114,8 @@ def walk(folderId):
                 stack.append((path + (top['name'],), dirs))
 
     df = pd.DataFrame(PERMISSION_DICT)
-    df.to_csv('permissions.csv')
-    print('exported {num} permissions'.format(num(len(df))))
+    df.to_csv('permissions2.csv')
+    print('exported {num} permissions'.format(num=len(df)))
 
 print('id,name,permissions')
 results_count=[]
