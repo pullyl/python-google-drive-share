@@ -106,3 +106,7 @@ venv.bak/
 # custom
 client_*.json
 credentials-*.dat
+*.xml
+*.iml
+*.csv
+service-account-credentials.json
