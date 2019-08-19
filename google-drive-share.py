@@ -19,96 +19,15 @@ def get_credentials(scopes, flags, owner, secrets='service-account-credentials.j
     delegated_credentials = creds.with_subject(owner)
     return delegated_credentials
 
-def iterfiles(service, args, email_blacklist, name=None, is_folder=None, parent=None, order_by='folder,name,createdTime'):
-    q = []
-    if name is not None:
-        q.append("name = '%s'" % name.replace("'", "\\'"))
-    if is_folder is not None:
-        q.append("mimeType %s '%s'" % ('=' if is_folder else '!=', FOLDER))
-    if parent is not None:
-        q.append("'%s' in parents" % parent.replace("'", "\\'"))
-    params = {'pageToken': None, 'orderBy': order_by}
-    if q:
-        params['q'] = ' and '.join(q)
-
-    count = 0
-    while True:
-        count += 1
-        response = service.files().list(**params).execute()
-        for f in response['files']:
-            try:
-                permissionList = service.permissions().list(fileId=f['id'],fields='*').execute()
-            except: #This will trigger when person running doesnt have permissions
-                print('error pulling {name} - {id}'.format(id=f['id'], name=f['name']))
-                continue
-
-            permissions = []
-            permissionIdsToRemove = []
-            removed = False
-
-            #Only allow whitelisted permissions
-            if len(args.emailAddressWhitelist):
-                for p in permissionList['permissions']:
-                    if 'emailAddress' in p:
-                        permissions.append('%s=%s' % (p['role'],p['emailAddress']))
-                        if p['role'] != 'owner' and p['emailAddress'] not in args.emailAddressWhitelist:
-                            permissionIdsToRemove.append(p['id'])
-                    else:
-                        permissions.append('%s=%s' % (p['role'],p['type']))
-                        permissionIdsToRemove.append(p['id'])
-
-            #Remove blacklisted permissions if exist
-            if len(email_blacklist):
-                removed = True
-                for p in permissionList['permissions']:
-                    if 'emailAddress' in p:
-                        permissions.append('%s=%s' % (p['role'],p['emailAddress']))
-                        if p['role'] != 'owner' and p['emailAddress'] in email_blacklist:
-                            permissionIdsToRemove.append(p['id'])
-                            PERMISSION_TO_REMOVE.append(
-                                {'id': f['id'], 'name': f['name'], 'displayName': p['displayName'], 'email': p['emailAddress']})
-
-            #Remove some if necessary
-            if args.prod and len(permissionIdsToRemove):
-                removed = True
-                for permissionId in permissionIdsToRemove:
-                    print('removing permissions: %s' % ','.join(permissionIdsToRemove))
-                    permissionList = service.permissions().delete(fileId=f['id'],permissionId=permissionId).execute()
-
-
-            #Add permissions to dict
-            if removed:
-                permissionList = service.permissions().list(fileId=f['id'],fields='*').execute()
-            for p in permissionList['permissions']:
-                if 'emailAddress' in p:
-                    permissions.append('%s=%s' % (p['role'], p['emailAddress']))
-            for p in permissions:
-                PERMISSION_DICT.append({'id': f['id'], 'name': f['name'], 'type': p.split('=')[0], 'person': p.split('=')[1]})
-
-            yield f
-        try:
-            params['pageToken'] = response['nextPageToken']
-        except KeyError:
-            return
-
-def walk(folderId, service, args, creds):
-    top = service.files().get(fileId=folderId).execute()
-    stack = [((top['name'],), [top])]
-
+def walk(service, args, creds, owner):
     #get emails for blacklist
     gc = gspread.authorize(creds)
     sheet = gc.open_by_url(args.emailAddressBlacklist).sheet1
     blacklist_emails = sheet.col_values(1)
 
-    while stack:
-        path, tops = stack.pop()
-        for top in tops:
-            dirs, files = is_file = [], []
-            for f in iterfiles(service, args, blacklist_emails, parent=top['id']):
-                is_file[f['mimeType'] != FOLDER].append(f)
-            yield path, top, dirs, files
-            if dirs:
-                stack.append((path + (top['name'],), dirs))
+    for email in blacklist_emails:
+        print(email)
+        a(service, args, email, owner)
 
     df = pd.DataFrame(PERMISSION_DICT)
     df.to_csv('all-folder-permissions.csv')
@@ -118,6 +37,47 @@ def walk(folderId, service, args, creds):
     df.to_csv('permissions_to_remove.csv')
     print('exported {num} permissions to remove'.format(num=len(df)))
 
+
+def a(service, args, email, owner):
+    q = "'{o}' in owners and '{w}' in writers".format(o=owner, w=email)
+
+    params = {'q': q}
+    response = service.files().list(**params).execute()
+
+    for f in response['files']:
+        permissionList = service.permissions().list(fileId=f['id'], fields='*').execute()
+
+        permissions = []
+        permissionIdsToRemove = []
+        removed = False
+
+        # Remove blacklisted permissions if exist
+        for p in permissionList['permissions']:
+            if 'emailAddress' in p:
+                permissions.append('%s=%s' % (p['role'], p['emailAddress']))
+                if p['role'] != 'owner' and p['emailAddress'] == email:
+                    permissionIdsToRemove.append(p['id'])
+                    PERMISSION_TO_REMOVE.append(
+                        {'id': f['id'], 'name': f['name'], 'displayName': p['displayName'],
+                         'email': p['emailAddress']})
+
+
+        # Remove some if necessary
+        if args.prod and len(permissionIdsToRemove):
+            removed = True
+            for permissionId in permissionIdsToRemove:
+                print('removing permissions: %s' % ','.join(permissionIdsToRemove))
+                permissionList = service.permissions().delete(fileId=f['id'], permissionId=permissionId).execute()
+
+        # Add permissions to dict
+        if removed:
+            permissionList = service.permissions().list(fileId=f['id'], fields='*').execute()
+        for p in permissionList['permissions']:
+            if 'emailAddress' in p:
+                permissions.append('%s=%s' % (p['role'], p['emailAddress']))
+        for p in permissions:
+            PERMISSION_DICT.append(
+                {'id': f['id'], 'name': f['name'], 'type': p.split('=')[0], 'person': p.split('=')[1]})
 
 def main():
     parser = argparse.ArgumentParser(
@@ -135,20 +95,17 @@ def main():
                         help='which files to query on')
     args = parser.parse_args()
     scope = ['https://www.googleapis.com/auth/drive', 'https://spreadsheets.google.com/feeds',
-              'https://www.googleapis.com/auth/spreadsheets.readonly',
-              'https://www.googleapis.com/auth/spreadsheets',
-              'https://www.googleapis.com/auth/drive.readonly',
-              'https://www.googleapis.com/auth/drive',
-              'https://www.googleapis.com/auth/drive.file']
+             'https://www.googleapis.com/auth/spreadsheets.readonly',
+             'https://www.googleapis.com/auth/spreadsheets',
+             'https://www.googleapis.com/auth/drive.readonly',
+             'https://www.googleapis.com/auth/drive',
+             'https://www.googleapis.com/auth/drive.file']
 
     for owner in args.owners:
         print('looking at drive for {o}'.format(o=owner))
         creds = get_credentials(scope, args, owner)
         service = build('drive', version='v3', credentials=creds)
-
-        results_count=[]
-        for path, root, dirs, files in walk(args.folderId, service, args, get_gspread_creds(scope, args)):
-            results_count.append('%s\t%d %d' % ('/'.join(path), len(dirs), len(files)))
+        walk(service, args, get_gspread_creds(scope, args), owner)
 
 def get_gspread_creds(scopes, flags, secrets='client_secret.json', storage='~/.credentials/google-drive-share.json'):
     store = file.Storage(os.path.expanduser(storage))

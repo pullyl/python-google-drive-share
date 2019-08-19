@@ -27,12 +27,6 @@ First time it runs it will open a browser window for oauth confirmation of Drive
 # help
 python google-drive-share.py --help
 
-# get folderId from URL in Google Drive
-python google-drive-share.py --folderId MYFOLDERID 
-
-# remove permissions not on whitelist
-python google-drive-share.py --folderId MYFOLDERID --emailAddressWhitelist allowedUser1@test.com allowedUser2@test.com
-
 # remove permissions from folks on blacklist
---folderId 1V09jZzZP5UshCnhTb7XS5DKZ-lbY2X_7 --emailAddressBlacklist [GOOGLE SPREADHSEET URL TO BLACKLIST] --owners admin@test.com
+--folderId 1V09jZzZP5UshCnhTb7XS5DKZ-lbY2X_7 --emailAddressBlacklist [GOOGLE SPREADHSEET URL TO BLACKLIST] --prod True --owners admin@test.com
 ```
