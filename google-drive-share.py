@@ -87,10 +87,6 @@ def main():
         description='Walks Google Drive folder and emits csv with file/folders sharing permissions',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         parents=[tools.argparser])
-    parser.add_argument('--folderId', dest='folderId', required=True,
-                        help='Google Drive folderId (found in url when folder is open')
-    parser.add_argument('--emailAddressWhitelist', dest='emailAddressWhitelist', nargs='*', default=[],
-                        help='if present will attempt to remove permissions from all emailAddresses not in the whitelist or the owner, including public share links')
     parser.add_argument('--emailAddressBlacklist', dest='emailAddressBlacklist', default=None,
                         help='if present will attempt to remove permissions from these email addresses')
     parser.add_argument('--prod', dest='prod', default=False, help='if true will remove permissions, otherwise just export what needs to be removed')

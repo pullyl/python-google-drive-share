@@ -28,5 +28,5 @@ First time it runs it will open a browser window for oauth confirmation of Drive
 python google-drive-share.py --help
 
 # remove permissions from folks on blacklist
---folderId 1V09jZzZP5UshCnhTb7XS5DKZ-lbY2X_7 --emailAddressBlacklist [GOOGLE SPREADHSEET URL TO BLACKLIST] --prod True --owners admin@test.com
+--emailAddressBlacklist [GOOGLE SPREADHSEET URL TO BLACKLIST] --prod True --owners admin@test.com
 ```
