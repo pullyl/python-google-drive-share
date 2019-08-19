@@ -67,7 +67,10 @@ def a(service, args, email, owner):
             removed = True
             for permissionId in permissionIdsToRemove:
                 print('removing permissions: %s' % ','.join(permissionIdsToRemove))
-                permissionList = service.permissions().delete(fileId=f['id'], permissionId=permissionId).execute()
+                try:
+                    permissionList = service.permissions().delete(fileId=f['id'], permissionId=permissionId).execute()
+                except:
+                    print('unable to remove permissions for file: {f} for {u}'.format(f=f['id'], u=email))
 
         # Add permissions to dict
         if removed:
