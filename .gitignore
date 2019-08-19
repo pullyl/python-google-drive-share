@@ -109,3 +109,4 @@ credentials-*.dat
 *.xml
 *.iml
 *.csv
+service-account-credentials.json

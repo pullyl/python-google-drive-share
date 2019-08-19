@@ -7,19 +7,17 @@ import gspread
 
 from apiclient.discovery import build  # pip install google-api-python-client
 from oauth2client import file, client, tools
+from google.oauth2 import service_account
 
 FOLDER = 'application/vnd.google-apps.folder'
 PERMISSION_DICT = []
 PERMISSION_TO_REMOVE = []
 
-def get_credentials(scopes, flags, secrets='client_secret.json', storage='~/.credentials/google-drive-share.json'):
+def get_credentials(scopes, flags, owner, secrets='service-account-credentials.json', storage='~/.credentials/google-drive-share.json'):
 
-    store = file.Storage(os.path.expanduser(storage))
-    creds = store.get()
-    if creds is None or creds.invalid:
-        flow = client.flow_from_clientsecrets(os.path.expanduser(secrets), scopes)
-        creds = tools.run_flow(flow, store, flags)
-    return creds
+    creds = service_account.Credentials.from_service_account_file(secrets, scopes=scopes)
+    delegated_credentials = creds.with_subject(owner)
+    return delegated_credentials
 
 def iterfiles(service, args, email_blacklist, name=None, is_folder=None, parent=None, order_by='folder,name,createdTime'):
     q = []
@@ -40,8 +38,8 @@ def iterfiles(service, args, email_blacklist, name=None, is_folder=None, parent=
         for f in response['files']:
             try:
                 permissionList = service.permissions().list(fileId=f['id'],fields='*').execute()
-            except:
-                print('error pulling {id}'.format(id=f['id']))
+            except: #This will trigger when person running doesnt have permissions
+                print('error pulling {name} - {id}'.format(id=f['id'], name=f['name']))
                 continue
 
             permissions = []
@@ -133,6 +131,8 @@ def main():
     parser.add_argument('--emailAddressBlacklist', dest='emailAddressBlacklist', default=None,
                         help='if present will attempt to remove permissions from these email addresses')
     parser.add_argument('--prod', dest='prod', default=False, help='if true will remove permissions, otherwise just export what needs to be removed')
+    parser.add_argument('--owners', dest='owners', nargs='*', default=[],
+                        help='which files to query on')
     args = parser.parse_args()
     scope = ['https://www.googleapis.com/auth/drive', 'https://spreadsheets.google.com/feeds',
               'https://www.googleapis.com/auth/spreadsheets.readonly',
@@ -140,12 +140,23 @@ def main():
               'https://www.googleapis.com/auth/drive.readonly',
               'https://www.googleapis.com/auth/drive',
               'https://www.googleapis.com/auth/drive.file']
-    creds = get_credentials(scope, args)
-    service = build('drive', version='v3', credentials=creds)
 
-    results_count=[]
-    for path, root, dirs, files in walk(args.folderId, service, args, creds):
-        results_count.append('%s\t%d %d' % ('/'.join(path), len(dirs), len(files)))
+    for owner in args.owners:
+        print('looking at drive for {o}'.format(o=owner))
+        creds = get_credentials(scope, args, owner)
+        service = build('drive', version='v3', credentials=creds)
+
+        results_count=[]
+        for path, root, dirs, files in walk(args.folderId, service, args, get_gspread_creds(scope, args)):
+            results_count.append('%s\t%d %d' % ('/'.join(path), len(dirs), len(files)))
+
+def get_gspread_creds(scopes, flags, secrets='client_secret.json', storage='~/.credentials/google-drive-share.json'):
+    store = file.Storage(os.path.expanduser(storage))
+    creds = store.get()
+    if creds is None or creds.invalid:
+        flow = client.flow_from_clientsecrets(os.path.expanduser(secrets), scopes)
+        creds = tools.run_flow(flow, store, flags)
+    return creds
 
 if __name__ == '__main__':
     main()
